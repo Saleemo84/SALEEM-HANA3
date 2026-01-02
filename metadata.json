@@ -1,7 +1,8 @@
 {
-  "name": "WanderLust AI Planner",
-  "description": "An intelligent travel assistant that plans your perfect trip including itineraries, budget, safety tips, and local insights using Google Gemini.",
+  "name": "TravelPlanner",
+  "description": "An intelligent, installable travel PWA that plans your perfect trip using Google Gemini and Google Maps.",
   "requestFramePermissions": [
-    "microphone"
+    "microphone",
+    "geolocation"
   ]
 }

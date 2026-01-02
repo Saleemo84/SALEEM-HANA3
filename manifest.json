@@ -1,0 +1,23 @@
+
+{
+  "short_name": "WanderLust",
+  "name": "WanderLust AI Travel Planner",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/826/826070.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/826/826070.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": ".",
+  "background_color": "#f8fafc",
+  "theme_color": "#2563eb",
+  "display": "standalone",
+  "scope": "/",
+  "description": "Elite AI travel concierge and itinerary designer."
+}

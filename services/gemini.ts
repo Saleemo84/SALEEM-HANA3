@@ -1,6 +1,6 @@
 
 import { GoogleGenAI } from "@google/genai";
-import { TripFormData, TripPlan, ChatMessage } from "../types";
+import { TripFormData, TripPlan, ChatMessage, WeatherDay, RecommendedHotel } from "../types";
 
 // Always use named parameter for apiKey and obtain from process.env.API_KEY
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -11,8 +11,9 @@ You are "WanderLust", an elite AI travel designer. Your goal is to create high-i
 CORE MISSION:
 1. SPECIFICITY: For every hotel and restaurant, you MUST provide a specific name.
 2. MAP INTEGRITY: You MUST use the 'googleMaps' tool to verify every location you recommend.
-3. PLATFORM AWARENESS: Mention platforms like Booking.com, TripAdvisor, Expedia, etc.
-4. FORMAT: Use the exact delimiters below for parsing.
+3. WEATHER API ROLE: You MUST use 'googleSearch' to act as a real-time weather API. Find the specific forecast for the destination on the travel dates provided.
+4. INTEGRATED BOOKING: You MUST provide a list of at least 3 specific hotel recommendations.
+5. LOGISTICS INTEGRATION: If flight details (airline, flight number, departure/arrival times) or car rental details (company, pickup/dropoff locations) are provided, you MUST integrate them into the 'Day 1' (arrival/pickup) and the 'Last Day' (departure/dropoff) itinerary sections as fixed time events.
 
 RESPONSE FORMAT:
 ---SECTION: ITINERARY---
@@ -22,36 +23,58 @@ RESPONSE FORMAT:
 (A strict JSON array ONLY.)
 Example: [{"category": "Hotels", "amount": 1200, "currency": "USD"}]
 
+---SECTION: HOTELS---
+(A strict JSON array of objects.)
+Example: [{"name": "The Ritz-Carlton", "stars": 5, "pricePerNight": 450, "amenities": ["WiFi", "Pool", "Spa"], "description": "Iconic luxury with city views.", "locationVibe": "Upscale Downtown"}]
+
+---SECTION: WEATHER---
+(A strict JSON array of objects.)
+Example: [{"date": "Oct 12", "condition": "Sunny", "tempHigh": 24, "tempLow": 16, "icon": "☀️"}]
+
 ---SECTION: PACKING---
-(A strict JSON array of objects with 'category' and 'items' list. Tailor to duration, weather for the travel date, and activities.)
-Example: [{"category": "Clothing", "items": ["5x Shirts", "Rain jacket"]}, {"category": "Essentials", "items": ["Passport", "Universal Adapter"]}]
+(A strict JSON array of objects.)
+Example: [{"category": "Clothing", "items": ["5x Shirts", "Light jacket"]}]
 
 ---SECTION: TRANSPORT---
-(Detailed logistics. Airport transfers, local transport.)
+(Detailed logistics.)
 
 ---SECTION: SECURITY---
-(Safety status, neighborhood avoidances, emergency numbers.)
+(Safety status.)
 
 ---SECTION: NIGHTLIFE---
-(Evening experiences appropriate for the traveler type.)
+(Evening experiences.)
 
 ---SECTION: DOS_AND_DONTS---
-(Tipping, cultural etiquette, essential packing items, "Do NOT" behaviors.)
+(Cultural etiquette.)
 `;
 
 export async function generateTripPlan(formData: TripFormData): Promise<TripPlan> {
-  const prompt = `
-    Please design a high-integrity travel plan for ${formData.destination}.
-    
-    TRAVEL CONTEXT:
-    - Dates: ${formData.travelDate} (${formData.duration} days)
-    - Group: ${formData.travelers}
-    - Budget: ${formData.budget} (${formData.currency})
-    - Accommodation Goals: ${formData.hotelPreferences}
-    - Interests: ${formData.interests.join(", ")}
-    - Extra Details: ${formData.notes}
+  let transportLogistics = '';
+  
+  if (formData.transportMode === 'Flight') {
+    transportLogistics = `Flight Info: ${formData.airline || ''} ${formData.flightNumber || ''} (Departure: ${formData.departureTime || 'N/A'}, Arrival: ${formData.arrivalTime || 'N/A'})`;
+  } else if (formData.transportMode === 'Car' && formData.carRentalCompany) {
+    transportLogistics = `Car Rental: ${formData.carRentalCompany} (Pickup: ${formData.pickupLocation || 'Not specified'}, Dropoff: ${formData.dropoffLocation || 'Not specified'})`;
+  } else {
+    transportLogistics = `Transport Mode: ${formData.transportMode}`;
+  }
 
-    Provide a complete guide with verified Google Maps locations and a tailored packing checklist.
+  const prompt = `
+    Generate a complete travel plan for ${formData.destination}.
+    Dates: ${formData.travelDate} for ${formData.duration} days.
+    
+    Travel Logistics:
+    - ${transportLogistics}
+    
+    Preferences:
+    - Group: ${formData.travelers}
+    - Budget Level: ${formData.budget}
+    - Hotel Preferences: ${formData.hotelPreferences}
+    - Interests: ${formData.interests.join(", ")}
+    - Notes: ${formData.notes}
+
+    You MUST find real, verified hotels in ${formData.destination} that fit the "${formData.budget}" budget.
+    Integrate the travel logistics provided directly into the itinerary flow.
   `;
 
   try {
@@ -64,7 +87,7 @@ export async function generateTripPlan(formData: TripFormData): Promise<TripPlan
           { googleMaps: {} },
           { googleSearch: {} }
         ],
-        temperature: 0.6,
+        temperature: 0.3,
       }
     });
 
@@ -77,32 +100,22 @@ export async function generateTripPlan(formData: TripFormData): Promise<TripPlan
       return match ? match.replace(name + "---", "").trim() : "";
     };
 
-    let budgetBreakdown = [];
-    try {
-      const budgetStr = getSection("BUDGET");
-      const cleanJson = budgetStr.replace(/```json/g, '').replace(/```/g, '').trim();
-      if (cleanJson) budgetBreakdown = JSON.parse(cleanJson);
-    } catch (e) {
-      budgetBreakdown = [{ category: "Estimated Total", amount: 0, currency: formData.currency }];
-    }
-
-    let packingList = [];
-    try {
-      const packingStr = getSection("PACKING");
-      const cleanJson = packingStr.replace(/```json/g, '').replace(/```/g, '').trim();
-      if (cleanJson) packingList = JSON.parse(cleanJson);
-    } catch (e) {
-      packingList = [
-        { category: "Clothing", items: ["Daily outfits", "Comfortable shoes"] },
-        { category: "Toiletries", items: ["Toothbrush", "Sunscreen"] },
-        { category: "Electronics", items: ["Phone charger", "Power bank"] }
-      ];
-    }
+    const parseJson = <T>(sectionName: string, fallback: T): T => {
+      try {
+        const content = getSection(sectionName);
+        const cleanJson = content.replace(/```json/g, '').replace(/```/g, '').trim();
+        return cleanJson ? JSON.parse(cleanJson) : fallback;
+      } catch (e) {
+        return fallback;
+      }
+    };
 
     return {
       itinerary: getSection("ITINERARY"),
-      budgetBreakdown,
-      packingList,
+      budgetBreakdown: parseJson("BUDGET", []),
+      packingList: parseJson("PACKING", []),
+      weatherForecast: parseJson("WEATHER", []),
+      recommendedHotels: parseJson("HOTELS", []),
       transportInfo: getSection("TRANSPORT"),
       securityTips: getSection("SECURITY"),
       nightlife: getSection("NIGHTLIFE"),
@@ -120,7 +133,7 @@ export async function getQuickTravelTip(destination: string): Promise<string> {
   if (!destination) return "";
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-flash-lite-latest',
+      model: 'gemini-3-flash-preview',
       contents: `Give me a fascinating "secret" tip for ${destination} in one punchy sentence. Include something that only locals know.`,
     });
     return response.text || "";

@@ -3,21 +3,41 @@ export interface TripFormData {
   destination: string;
   duration: number;
   travelDate: string;
-  travelers: string; // Couple, Solo, Family, etc.
-  budget: string; // Budget, Moderate, Luxury
-  budgetAmount?: string; // Optional specific amount
-  currency: string; // Preferred currency for budget
-  hotelPreferences: string; // Stars, amenities
-  transportMode: string; // Flight, Train, Car
-  flightClass?: string; // Economy, Business, etc.
-  airportTransfer: string; // Taxi, Public Transport, Rental, Hotel Shuttle
+  travelers: string;
+  budget: string;
+  budgetAmount?: string;
+  currency: string;
+  hotelPreferences: string;
+  transportMode: string;
+  flightClass?: string;
+  airportTransfer: string;
   carRental: boolean;
-  interests: string[]; // Sightseeing, Nightlife, Food, etc.
+  interests: string[];
   notes: string;
   airline?: string;
   flightNumber?: string;
   departureTime?: string;
   arrivalTime?: string;
+  carRentalCompany?: string;
+  pickupLocation?: string;
+  dropoffLocation?: string;
+}
+
+export interface WeatherDay {
+  date: string;
+  condition: string;
+  tempHigh: number;
+  tempLow: number;
+  icon: string;
+}
+
+export interface RecommendedHotel {
+  name: string;
+  stars: number;
+  pricePerNight: number;
+  amenities: string[];
+  description: string;
+  locationVibe: string;
 }
 
 export interface PackingCategory {
@@ -48,6 +68,8 @@ export interface TripPlan {
   itinerary: string;
   budgetBreakdown: { category: string; amount: number; currency: string }[];
   packingList: PackingCategory[];
+  weatherForecast: WeatherDay[];
+  recommendedHotels: RecommendedHotel[];
   securityTips: string;
   nightlife: string;
   dosAndDonts: string;
@@ -62,6 +84,7 @@ export interface SavedTrip {
   destination: string;
   formData: TripFormData;
   plan: TripPlan;
+  offlineMapDataUrl?: string;
 }
 
 export interface ChatMessage {
