@@ -1,6 +1,6 @@
 
 import { GoogleGenAI } from "@google/genai";
-import { TripFormData, TripPlan, ChatMessage, WeatherDay, RecommendedHotel } from "../types";
+import { TripFormData, TripPlan, ChatMessage, WeatherDay, RecommendedHotel, GroundingChunk } from "../types";
 
 // Always use named parameter for apiKey and obtain from process.env.API_KEY
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -12,12 +12,16 @@ CORE MISSION:
 1. SPECIFICITY: For every hotel and restaurant, you MUST provide a specific name.
 2. MAP INTEGRITY: You MUST use the 'googleMaps' tool to verify every location you recommend.
 3. WEATHER API ROLE: You MUST use 'googleSearch' to act as a real-time weather API. Find the specific forecast for the destination on the travel dates provided.
-4. INTEGRATED BOOKING: You MUST provide a list of at least 3 specific hotel recommendations.
-5. LOGISTICS INTEGRATION: If flight details (airline, flight number, departure/arrival times) or car rental details (company, pickup/dropoff locations) are provided, you MUST integrate them into the 'Day 1' (arrival/pickup) and the 'Last Day' (departure/dropoff) itinerary sections as fixed time events.
+4. TRAVEL ALERTS: You MUST use 'googleSearch' to check for current official travel advisories, safety alerts, health warnings (e.g., CDC/WHO), or major local disruptions (strikes, weather events) for the destination.
+5. INTEGRATED BOOKING: You MUST provide a list of at least 3 specific hotel recommendations.
+6. LOGISTICS INTEGRATION: If flight details (airline, flight number, departure/arrival times), car rental details (company, pickup/dropoff locations), train details (number, stations), or bus details (company, stops) are provided, you MUST integrate them into the 'Day 1' (arrival/pickup) and the 'Last Day' (departure/dropoff) itinerary sections as fixed time events.
 
 RESPONSE FORMAT:
 ---SECTION: ITINERARY---
 (Day by day plan. Use Markdown.)
+
+---SECTION: ADVISORIES---
+(Recent travel alerts, health warnings, or entry requirements. Use bullet points and cite sources if possible.)
 
 ---SECTION: BUDGET---
 (A strict JSON array ONLY.)
@@ -55,9 +59,15 @@ export async function generateTripPlan(formData: TripFormData): Promise<TripPlan
     transportLogistics = `Flight Info: ${formData.airline || ''} ${formData.flightNumber || ''} (Departure: ${formData.departureTime || 'N/A'}, Arrival: ${formData.arrivalTime || 'N/A'})`;
   } else if (formData.transportMode === 'Car' && formData.carRentalCompany) {
     transportLogistics = `Car Rental: ${formData.carRentalCompany} (Pickup: ${formData.pickupLocation || 'Not specified'}, Dropoff: ${formData.dropoffLocation || 'Not specified'})`;
+  } else if (formData.transportMode === 'Train') {
+    transportLogistics = `Train Info: ${formData.trainNumber || 'Not specified'} (From: ${formData.departureStation || 'N/A'}, To: ${formData.arrivalStation || 'N/A'})`;
+  } else if (formData.transportMode === 'Bus') {
+    transportLogistics = `Bus Info: ${formData.busCompany || 'Not specified'} (Station/Stop: ${formData.busStop || 'N/A'})`;
   } else {
     transportLogistics = `Transport Mode: ${formData.transportMode}`;
   }
+
+  const insuranceInfo = formData.insuranceProvider ? `Travel Insurance: ${formData.insurancePlan} from ${formData.insuranceProvider}` : 'Travel Insurance: Not selected';
 
   const prompt = `
     Generate a complete travel plan for ${formData.destination}.
@@ -65,6 +75,7 @@ export async function generateTripPlan(formData: TripFormData): Promise<TripPlan
     
     Travel Logistics:
     - ${transportLogistics}
+    - ${insuranceInfo}
     
     Preferences:
     - Group: ${formData.travelers}
@@ -73,8 +84,10 @@ export async function generateTripPlan(formData: TripFormData): Promise<TripPlan
     - Interests: ${formData.interests.join(", ")}
     - Notes: ${formData.notes}
 
-    You MUST find real, verified hotels in ${formData.destination} that fit the "${formData.budget}" budget.
-    Integrate the travel logistics provided directly into the itinerary flow.
+    CRITICAL: 
+    1. Search for current official travel advisories, health warnings, and safety alerts for ${formData.destination}.
+    2. Find real, verified hotels in ${formData.destination} that fit the "${formData.budget}" budget.
+    3. Integrate the travel logistics provided directly into the itinerary flow.
   `;
 
   try {
@@ -112,6 +125,7 @@ export async function generateTripPlan(formData: TripFormData): Promise<TripPlan
 
     return {
       itinerary: getSection("ITINERARY"),
+      advisories: getSection("ADVISORIES"),
       budgetBreakdown: parseJson("BUDGET", []),
       packingList: parseJson("PACKING", []),
       weatherForecast: parseJson("WEATHER", []),
@@ -126,6 +140,27 @@ export async function generateTripPlan(formData: TripFormData): Promise<TripPlan
   } catch (error) {
     console.error("Gemini API Error:", error);
     throw error;
+  }
+}
+
+export async function exploreNearby(query: string, existingTitles: string[]): Promise<GroundingChunk[]> {
+  const prompt = `Find 5 exciting points of interest (restaurants, local attractions, or unique spots) near "${query}". 
+  Crucially, DO NOT include any of the following places: ${existingTitles.join(", ")}.
+  Search for diverse options that a tourist would find interesting.`;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+      config: {
+        tools: [{ googleMaps: {} }],
+        temperature: 0.7,
+      }
+    });
+    return response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+  } catch (e) {
+    console.error("Nearby Exploration Error:", e);
+    return [];
   }
 }
 

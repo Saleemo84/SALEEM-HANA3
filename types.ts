@@ -21,6 +21,13 @@ export interface TripFormData {
   carRentalCompany?: string;
   pickupLocation?: string;
   dropoffLocation?: string;
+  insuranceProvider?: string;
+  insurancePlan?: string;
+  trainNumber?: string;
+  departureStation?: string;
+  arrivalStation?: string;
+  busCompany?: string;
+  busStop?: string;
 }
 
 export interface WeatherDay {
@@ -71,6 +78,7 @@ export interface TripPlan {
   weatherForecast: WeatherDay[];
   recommendedHotels: RecommendedHotel[];
   securityTips: string;
+  advisories: string;
   nightlife: string;
   dosAndDonts: string;
   transportInfo: string;
